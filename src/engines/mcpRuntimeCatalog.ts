@@ -42,6 +42,7 @@ export type McpResolvedToolDefinition = {
   serverHandle: string;
   transport: McpServerConfig['transport'];
   url: string;
+  authMode?: McpServerConfig['authMode'];
   toolName: string;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -136,6 +137,7 @@ function normalizeDiscoveredTools(
         serverHandle: buildMcpHandle(server),
         transport: server.transport,
         url: server.url,
+        authMode: server.authMode,
         toolName,
         description: tool.description?.trim() || savedTool?.description || `调用 MCP 工具 ${toolName}`,
         inputSchema: normalizeInputSchema(tool.inputSchema ?? savedTool?.inputSchema),
@@ -303,6 +305,7 @@ function buildMcpCatalogCacheKey(server: McpServerConfig) {
     handle: server.handle,
     transport: server.transport,
     url: server.url,
+    authMode: server.authMode ?? 'headers',
     headers: server.headers.map((header) => [header.key, header.value])
   });
 }
@@ -422,6 +425,7 @@ export async function invokeMcpTool(args: {
     transport: args.tool.transport,
     url: args.tool.url,
     headers: args.headers ?? [],
+    authMode: args.tool.authMode,
     tools: [],
     isActive: true
   };

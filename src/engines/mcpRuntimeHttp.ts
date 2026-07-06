@@ -8,6 +8,11 @@
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import {
+  forceRefreshMcpAuthorization,
+  resolveMcpAuthorizationHeader
+} from './mcpOauthFlow';
+import { fetchWithMcpProxyFallback } from './mcpProxy';
+import {
   createRpcId,
   ensureSuccessMessage,
   findResponseMessage
@@ -84,7 +89,7 @@ async function requestMcpHttp(
 ) {
   if (!shouldUseNativeMcpHttp(url, options)) {
     const fetchImpl = getFetchImpl(options.fetchImpl);
-    return await fetchImpl(url, init);
+    return await fetchWithMcpProxyFallback(url, init, fetchImpl);
   }
 
   const headers = new Headers(init.headers ?? undefined);
@@ -162,9 +167,10 @@ async function postStreamableJsonRpc(
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(createTimeoutError(options.label, options.timeoutMs)), options.timeoutMs);
 
-  try {
+  const sendOnce = async () => {
     const headers = buildServerHeaders(options.server, {
       'Content-Type': 'application/json',
+      ...(await resolveMcpAuthorizationHeader(options.server, options.fetchImpl)),
       ...(options.protocolVersion ? { 'MCP-Protocol-Version': options.protocolVersion } : {}),
       ...(options.sessionId ? { 'Mcp-Session-Id': options.sessionId } : {})
     });
@@ -175,6 +181,20 @@ async function postStreamableJsonRpc(
       body: JSON.stringify(payload),
       signal: controller.signal
     }, options);
+  };
+
+  try {
+    const response = await sendOnce();
+    if (response.status !== 401 || options.server.authMode !== 'oauth') {
+      return response;
+    }
+    // One forced token refresh, then one retry — an expired access token is
+    // the common 401 for OAuth servers. Anything else surfaces as-is.
+    const refreshed = await forceRefreshMcpAuthorization(options.server, options.fetchImpl);
+    if (!refreshed) {
+      return response;
+    }
+    return await sendOnce();
   } finally {
     globalThis.clearTimeout(timeoutId);
   }
@@ -230,6 +250,7 @@ export async function closeStreamableSession(options: McpTransportOptions & Stre
     await requestMcpHttp(options.endpoint, {
       method: 'DELETE',
       headers: buildServerHeaders(options.server, {
+        ...(await resolveMcpAuthorizationHeader(options.server, options.fetchImpl).catch(() => ({}))),
         'MCP-Protocol-Version': options.protocolVersion,
         'Mcp-Session-Id': options.sessionId
       })

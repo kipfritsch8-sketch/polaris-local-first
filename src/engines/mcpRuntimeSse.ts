@@ -5,6 +5,8 @@
 // endpoint and correlated back by id. Owns the persistent connection and its pending
 // map; no catalog, no cache. The streamable HTTP transport lives separately.
 
+import { resolveMcpAuthorizationHeader } from './mcpOauthFlow';
+import { fetchWithMcpProxyFallback } from './mcpProxy';
 import {
   createRpcId,
   ensureSuccessMessage,
@@ -91,16 +93,14 @@ async function openLegacySseConnection(options: McpTransportOptions): Promise<Le
   const endpointDeferred = createDeferred<string>();
   const pending = new Map<string, PendingSseResponse>();
 
-  const response = await fetchImpl(options.server.url, {
+  const response = await fetchWithMcpProxyFallback(options.server.url, {
     method: 'GET',
-    headers: (() => {
-      const headers = buildServerHeaders(options.server, {
-        Accept: 'text/event-stream'
-      });
-      return headers;
-    })(),
+    headers: buildServerHeaders(options.server, {
+      ...(await resolveMcpAuthorizationHeader(options.server, options.fetchImpl)),
+      Accept: 'text/event-stream'
+    }),
     signal: streamController.signal
-  });
+  }, fetchImpl);
 
   if (!response.ok || !response.body) {
     throw new Error(`连接 MCP SSE 服务失败：HTTP ${response.status}`);
@@ -163,14 +163,15 @@ async function openLegacySseConnection(options: McpTransportOptions): Promise<Le
     }
 
     try {
-      const postResponse = await fetchImpl(endpoint, {
+      const postResponse = await fetchWithMcpProxyFallback(endpoint, {
         method: 'POST',
         headers: buildServerHeaders(options.server, {
+          ...(await resolveMcpAuthorizationHeader(options.server, options.fetchImpl)),
           'Content-Type': 'application/json'
         }),
         body: JSON.stringify(payload),
         signal: controller.signal
-      });
+      }, fetchImpl);
 
       if (!postResponse.ok) {
         const errorText = await postResponse.text().catch(() => '');

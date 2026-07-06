@@ -71,6 +71,8 @@ export interface WebSearchConfig {
 
 export type McpServerTransport = 'streamable-http' | 'sse';
 
+export type McpServerAuthMode = 'headers' | 'oauth';
+
 export interface McpServerHeader {
   id: string;
   key: string;
@@ -92,6 +94,7 @@ export interface McpServerConfig {
   transport: McpServerTransport;
   url: string;
   headers: McpServerHeader[];
+  authMode?: McpServerAuthMode;
   tools?: McpServerToolConfig[];
   isActive: boolean;
 }

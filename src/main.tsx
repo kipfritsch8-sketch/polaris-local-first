@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { installBootRescueSurface } from './app/bootstrap/bootRescueSurface';
 import { installClientDiagnosticsReporter } from './app/bootstrap/clientDiagnosticsReporter';
 import { installGlobalClientErrorLogging } from './app/bootstrap/clientErrorLog';
+import { installMcpOauthCallbackBootstrap } from './app/bootstrap/mcpOauthCallbackBootstrap';
 import { installRuntimeStoreLocalDataBackend } from './app/bootstrap/storeLocalDataBackendBootstrap';
 import { recordAppRuntimeLogEntry } from './infrastructure/appRuntimeLog';
 import { AppErrorBoundary } from './ui/AppErrorBoundary';
@@ -17,6 +18,9 @@ installClientDiagnosticsReporter();
 // Choose the store LocalData backend before any store hydrates or persists: native SQLite when
 // available, otherwise the host's KV default. This is the only product runtime install point.
 installRuntimeStoreLocalDataBackend();
+// Finish an MCP OAuth redirect (`?code=…&state=…`) if this boot is one;
+// runs async alongside React mount and no-ops for ordinary boots.
+installMcpOauthCallbackBootstrap();
 const rootElement = document.getElementById('root');
 const bootRescueSurface = installBootRescueSurface({ root: rootElement });
 

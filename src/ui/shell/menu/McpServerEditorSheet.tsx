@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { buildMcpHandle } from '../../../engines/mcpHandle';
+import {
+  clearMcpAuthorization,
+  getMcpAuthorizationStatus,
+  startMcpOauthAuthorization
+} from '../../../engines/mcpOauthFlow';
 import { resolveMcpToolCatalog, type McpResolvedToolDefinition } from '../../../engines/mcpRuntime';
 import { useI18n } from '../../../i18n/useI18n';
-import type { McpServerConfig, McpServerHeader, McpServerToolConfig, McpServerTransport } from '../../../types/domain';
+import type { McpServerAuthMode, McpServerConfig, McpServerHeader, McpServerToolConfig, McpServerTransport } from '../../../types/domain';
 import { Icon } from '../../Icon';
 
 type McpServerEditorSheetProps = {
@@ -59,6 +64,8 @@ export function McpServerEditorSheet({
   const [transport, setTransport] = useState<McpServerTransport>('streamable-http');
   const [url, setUrl] = useState('');
   const [headers, setHeaders] = useState<McpServerHeader[]>([]);
+  const [authMode, setAuthMode] = useState<McpServerAuthMode>('headers');
+  const [authBusy, setAuthBusy] = useState(false);
   const [tools, setTools] = useState<McpServerToolConfig[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [testState, setTestState] = useState<McpConnectionTestState>({ status: 'idle' });
@@ -70,6 +77,8 @@ export function McpServerEditorSheet({
     setTransport(server?.transport ?? 'streamable-http');
     setUrl(server?.url ?? '');
     setHeaders(server?.headers.length ? server.headers : []);
+    setAuthMode(server?.authMode === 'oauth' ? 'oauth' : 'headers');
+    setAuthBusy(false);
     setTools(server?.tools ?? []);
     setIsActive(server?.isActive ?? true);
     setTestState({ status: 'idle' });
@@ -108,6 +117,7 @@ export function McpServerEditorSheet({
       transport,
       url: trimmedUrl,
       headers: normalizedHeaders(),
+      authMode,
       tools,
       isActive: true
     };
@@ -161,10 +171,51 @@ export function McpServerEditorSheet({
       transport,
       url: trimmedUrl,
       headers: normalizedHeaders(),
+      authMode,
       tools,
       isActive
     });
     onClose();
+  };
+
+  const authStatus = url.trim() ? getMcpAuthorizationStatus(url.trim()) : 'none';
+
+  const startAuthorization = async () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setTestState({ status: 'error', message: t('settings.mcp.testMissingUrl') });
+      return;
+    }
+
+    setAuthBusy(true);
+    try {
+      const { authorizeUrl } = await startMcpOauthAuthorization({
+        server: {
+          ...(server?.id ? { id: server.id } : {}),
+          name: name.trim() || t('settings.mcp.testNameFallback'),
+          description: description.trim(),
+          transport,
+          url: trimmedUrl,
+          headers: normalizedHeaders(),
+          tools,
+          isActive
+        }
+      });
+      window.location.assign(authorizeUrl);
+    } catch (error) {
+      setAuthBusy(false);
+      setTestState({
+        status: 'error',
+        message: error instanceof Error ? error.message : t('settings.mcp.oauthStartFailed')
+      });
+    }
+  };
+
+  const revokeAuthorization = () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) return;
+    clearMcpAuthorization(trimmedUrl);
+    setTestState({ status: 'idle' });
   };
 
   return (
@@ -241,6 +292,59 @@ export function McpServerEditorSheet({
               placeholder="http://localhost:3000"
             />
           </label>
+
+          <div className="mcp-transport-field">
+            <span>{t('settings.mcp.authModeLabel')}</span>
+            <div className="mcp-transport-switch">
+              <button
+                type="button"
+                className={authMode === 'headers' ? 'active' : ''}
+                onClick={() => setAuthMode('headers')}
+              >
+                {t('settings.mcp.authModeHeaders')}
+              </button>
+              <button
+                type="button"
+                className={authMode === 'oauth' ? 'active' : ''}
+                onClick={() => setAuthMode('oauth')}
+              >
+                OAuth
+              </button>
+            </div>
+          </div>
+
+          {authMode === 'oauth' ? (
+            <div className="mcp-test-panel">
+              <button
+                type="button"
+                className="mcp-btn secondary mcp-test-button"
+                onClick={startAuthorization}
+                disabled={authBusy}
+              >
+                {authBusy
+                  ? t('settings.mcp.oauthAuthorizing')
+                  : authStatus === 'authorized'
+                    ? t('settings.mcp.oauthReauthorize')
+                    : t('settings.mcp.oauthAuthorize')}
+              </button>
+              <p aria-live="polite">
+                {authStatus === 'authorized'
+                  ? t('settings.mcp.oauthStatusAuthorized')
+                  : authStatus === 'expired'
+                    ? t('settings.mcp.oauthStatusExpired')
+                    : t('settings.mcp.oauthStatusNone')}
+              </p>
+              {authStatus !== 'none' ? (
+                <button
+                  type="button"
+                  className="theme-inline-action"
+                  onClick={revokeAuthorization}
+                >
+                  {t('settings.mcp.oauthRevoke')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className={`mcp-test-panel ${testState.status !== 'idle' ? `mcp-test-panel--${testState.status}` : ''}`}>
             <button

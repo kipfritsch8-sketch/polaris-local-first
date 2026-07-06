@@ -1,6 +1,7 @@
 import { createUid } from '../engines/id';
 import { buildMcpHandle } from '../engines/mcpHandle';
 import type {
+  McpServerAuthMode,
   McpServerConfig,
   McpServerHeader,
   McpServerToolConfig,
@@ -29,6 +30,10 @@ function normalizePositiveInt(value: unknown, fallback: number) {
     return fallback;
   }
   return Math.floor(value);
+}
+
+function normalizeMcpAuthMode(value: unknown): McpServerAuthMode {
+  return value === 'oauth' ? 'oauth' : 'headers';
 }
 
 function normalizeMcpTransport(value: unknown): McpServerTransport {
@@ -145,6 +150,7 @@ export function normalizeMcpServer(
     transport: normalizeMcpTransport(input?.transport),
     url: input?.url?.trim() || '',
     headers: normalizeMcpHeaders(input?.headers),
+    authMode: normalizeMcpAuthMode(input?.authMode),
     tools: normalizeMcpTools(input?.tools),
     isActive: input?.isActive ?? true
   };
@@ -203,6 +209,7 @@ export function serializeMcpServersToJson(servers: McpServerConfig[]) {
               .filter((header) => header.key.trim())
               .map((header) => [header.key.trim(), header.value])
           ),
+          authMode: server.authMode === 'oauth' ? 'oauth' : undefined,
           tools: (server.tools ?? []).map((tool) => ({
             name: tool.name,
             description: tool.description || undefined,
@@ -242,6 +249,7 @@ export function parseMcpServersJson(jsonText: string): McpServerConfig[] {
             ? entry.endpoint
             : '',
         headers: normalizeMcpHeaders(entry.headers),
+        authMode: normalizeMcpAuthMode(entry.authMode),
         tools: normalizeMcpTools(entry.tools),
         isActive: typeof entry.isActive === 'boolean' ? entry.isActive : true
       }, key);
