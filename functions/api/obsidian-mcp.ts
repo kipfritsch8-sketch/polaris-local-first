@@ -3,16 +3,27 @@
 // A stateless streamable-HTTP MCP server that translates MCP tool calls into
 // Obsidian Local REST API requests (the community plugin running inside the
 // user's desktop Obsidian, exposed through a tunnel). The vault location and
-// credential are not stored here — every request carries them as headers the
-// Polaris MCP client is configured with:
+// credential are not stored here — every request carries them either as
+// headers (how the Polaris MCP client is configured, since its editor has a
+// custom-headers UI):
 //
 //   X-Obsidian-Base-Url: https://<tunnel-host>          (the tunneled plugin)
 //   X-Obsidian-Api-Key:  <Local REST API plugin key>
+//
+// ...or, for MCP clients whose "add a server" flow only accepts a bare URL
+// (e.g. Claude Desktop's custom connector dialog), as query parameters on
+// the endpoint URL itself: `?base=<tunnel-host>&key=<plugin-key>`. Headers
+// take precedence when both are present. The query-param form puts the key
+// in the URL (visible in that client's saved config and in this Function's
+// request logs) — acceptable for a single-user bridge, but headers are
+// preferable whenever the client supports them.
 //
 // Being same-origin with the web app, this endpoint needs no CORS handling.
 
 const BASE_URL_HEADER = 'x-obsidian-base-url';
 const API_KEY_HEADER = 'x-obsidian-api-key';
+const BASE_URL_QUERY_PARAM = 'base';
+const API_KEY_QUERY_PARAM = 'key';
 const PROTOCOL_VERSION = '2025-03-26';
 
 type JsonRpcId = string | number | null;
@@ -265,13 +276,18 @@ export const onRequest = async (context: { request: Request }): Promise<Response
     return new Response(null, { status: 202 });
   }
 
-  const baseUrl = request.headers.get(BASE_URL_HEADER)?.trim() ?? '';
-  const apiKey = request.headers.get(API_KEY_HEADER)?.trim() ?? '';
+  const requestUrl = new URL(request.url);
+  const baseUrl = request.headers.get(BASE_URL_HEADER)?.trim()
+    || requestUrl.searchParams.get(BASE_URL_QUERY_PARAM)?.trim()
+    || '';
+  const apiKey = request.headers.get(API_KEY_HEADER)?.trim()
+    || requestUrl.searchParams.get(API_KEY_QUERY_PARAM)?.trim()
+    || '';
   if (!baseUrl || !apiKey) {
     return jsonRpcError(
       id,
       -32000,
-      `Missing Obsidian connection headers. Configure the MCP server in Polaris with custom headers "${BASE_URL_HEADER}" (the tunneled Local REST API origin) and "${API_KEY_HEADER}".`
+      `Missing Obsidian connection info. Configure the MCP server with custom headers "${BASE_URL_HEADER}" / "${API_KEY_HEADER}", or (when the client only accepts a bare URL) append "?${BASE_URL_QUERY_PARAM}=<tunnel-url>&${API_KEY_QUERY_PARAM}=<api-key>" to this endpoint's URL.`
     );
   }
   try {
