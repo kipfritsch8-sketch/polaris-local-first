@@ -120,6 +120,9 @@ async function obsidianFetch(
     ...init,
     headers: {
       Authorization: `Bearer ${target.apiKey}`,
+      // Keeps free ngrok tunnels from answering with their browser interstitial.
+      'ngrok-skip-browser-warning': '1',
+      'User-Agent': 'polaris-obsidian-bridge/1.0',
       ...(init.headers ?? {})
     }
   });
