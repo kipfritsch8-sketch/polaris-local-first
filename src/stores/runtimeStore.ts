@@ -374,13 +374,22 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         rule.id === ruleId ? markRuntimeTriggerFailed(rule, error, runAt) : rule
       )
     })),
-  setMcpServers: (servers) =>
+  // MCP server edits force an immediate persist rather than waiting on the
+  // debounced subscription in persistentStoreFlush.ts: these edits are often
+  // followed closely by a page reload (an OAuth redirect round-trip is a
+  // full reload; testing a fresh connection and then leaving the settings
+  // page is a common flow too), and the 180ms debounce plus
+  // pagehide/visibilitychange listener is not guaranteed to run to
+  // completion before that reload tears the page down.
+  setMcpServers: (servers) => {
     set(() => ({
       ...normalizeRuntimeMcpState({
         mcpServers: servers,
         mcpToolTimeoutSeconds: get().mcpToolTimeoutSeconds
       })
-    })),
+    }));
+    void get().persistToDb();
+  },
   createMcpServer: (seed) => {
     const normalized = normalizeRuntimeMcpState({
       mcpServers: [
@@ -393,9 +402,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     set({
       mcpServers: normalized.mcpServers
     });
+    void get().persistToDb();
     return nextServer?.id ?? '';
   },
-  updateMcpServer: (serverId, patch) =>
+  updateMcpServer: (serverId, patch) => {
     set((state) => ({
       mcpServers: normalizeRuntimeMcpState({
         mcpServers: state.mcpServers.map((server) =>
@@ -403,11 +413,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         ),
         mcpToolTimeoutSeconds: state.mcpToolTimeoutSeconds
       }).mcpServers
-    })),
-  deleteMcpServer: (serverId) =>
+    }));
+    void get().persistToDb();
+  },
+  deleteMcpServer: (serverId) => {
     set((state) => ({
       mcpServers: state.mcpServers.filter((server) => server.id !== serverId)
-    })),
+    }));
+    void get().persistToDb();
+  },
   setMcpToolTimeoutSeconds: (seconds) =>
     set((state) => ({
       mcpToolTimeoutSeconds: normalizeRuntimeMcpState({
